@@ -1,0 +1,95 @@
+// Code
+
+// package.json
+//json
+{
+  "name": "job-app-tracker-client",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.0.0",
+    "axios": "^1.4.0",
+    "jwt-decode": "^3.1.2"
+  },
+  "scripts": {
+    "start": "vite"
+  }
+}
+//
+
+// main.jsx
+//jsx
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import './index.css'
+import Login from './pages/Login'
+import Register from './pages/Register'
+import Jobs from './pages/Jobs'
+import Dashboard from './pages/Dashboard'
+
+function App(){
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path='/' element={<Jobs />} />
+        <Route path='/login' element={<Login />} />
+        <Route path='/register' element={<Register />} />
+        <Route path='/dashboard' element={<Dashboard/>} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
+
+createRoot(document.getElementById('root')).render(<App />)
+//
+
+// Jobs.jsx
+//jsx
+import React, { useEffect, useState } from 'react'
+import axios from 'axios'
+
+export default function Jobs(){
+  const [jobs, setJobs] = useState([])
+  useEffect(()=>{ axios.get('http://localhost:4000/jobs').then(r=>setJobs(r.data)) }, [])
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">Job Listings</h1>
+      <div className="space-y-4">
+        {jobs.map(j=> (
+          <div key={j.id} className="border p-4 rounded-lg">
+            <h3 className="text-lg font-semibold">{j.title} — {j.company}</h3>
+            <p className="text-sm text-gray-600">{j.location}</p>
+            <p className="mt-2">{j.description?.slice(0,200)}...</p>
+            <a className="mt-3 inline-block text-indigo-600" href={`/apply?jobId=${j.id}`}>Apply</a>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+//
+
+//Dashboard.jsx
+//jsx
+import React, { useEffect, useState } from 'react'
+import axios from 'axios'
+
+export default function Dashboard(){
+  const [apps, setApps] = useState([])
+  const userId = localStorage.getItem('userId')
+  useEffect(()=>{ if(userId) axios.get(`http://localhost:4000/applications/user/${userId}`).then(r=>setApps(r.data)) }, [userId])
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">My Applications</h1>
+      <ul className="space-y-3">
+        {apps.map(a=> (
+          <li key={a.id} className="border p-3 rounded">{a.Job?.title || 'Job'} — <strong>{a.status}</strong></li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+//
