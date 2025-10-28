@@ -1,0 +1,185 @@
+//Code
+//package.json
+//json
+{
+  "name": "job-app-tracker-server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.10.0",
+    "sequelize": "^6.32.1"
+  }
+}
+//
+
+//.env.example
+PORT=4000
+DATABASE_URL=postgres://user:pass@localhost:5432/jobtracker
+JWT_SECRET=replace_with_strong_secret
+//
+
+//index.js
+//js
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const { sequelize } = require('./models');
+const authRoutes = require('./routes/auth');
+const jobRoutes = require('./routes/jobs');
+const applicationRoutes = require('./routes/applications');
+
+dotenv.config();
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use('/uploads', express.static('uploads'));
+
+app.use('/auth', authRoutes);
+app.use('/jobs', jobRoutes);
+app.use('/applications', applicationRoutes);
+
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, async () => {
+  console.log(`Server listening on ${PORT}`);
+  try { await sequelize.authenticate(); console.log('DB connected'); } catch (err) { console.error(err); }
+});
+//
+
+//models/index.js
+//js
+const { Sequelize, DataTypes } = require('sequelize');
+const sequelize = new Sequelize(process.env.DATABASE_URL, { dialect: 'postgres' });
+
+const User = sequelize.define('User', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  name: DataTypes.STRING,
+  email: { type: DataTypes.STRING, unique: true },
+  passwordHash: DataTypes.STRING,
+  role: { type: DataTypes.ENUM('applicant','recruiter','admin'), defaultValue: 'applicant' }
+});
+
+const Job = sequelize.define('Job', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  title: DataTypes.STRING,
+  company: DataTypes.STRING,
+  location: DataTypes.STRING,
+  description: DataTypes.TEXT
+});
+
+const Application = sequelize.define('Application', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  status: { type: DataTypes.ENUM('Applied','Under Review','Interview','Hired','Rejected'), defaultValue: 'Applied' },
+  resumeUrl: DataTypes.STRING
+});
+
+User.hasMany(Application, { foreignKey: 'userId' });
+Application.belongsTo(User, { foreignKey: 'userId' });
+Job.hasMany(Application, { foreignKey: 'jobId' });
+Application.belongsTo(Job, { foreignKey: 'jobId' });
+
+module.exports = { sequelize, User, Job, Application };
+//
+
+//routes/auth.js
+//js
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const { User } = require('../models');
+
+router.post('/register', async (req,res)=>{
+  const { name, email, password, role } = req.body;
+  const salt = await bcrypt.genSalt(10);
+  const hash = await bcrypt.hash(password, salt);
+  const user = await User.create({ name, email, passwordHash: hash, role });
+  res.json({ id: user.id, email: user.email });
+});
+
+router.post('/login', async (req,res)=>{
+  const { email, password } = req.body;
+  const user = await User.findOne({ where: { email } });
+  if(!user) return res.status(401).json({ message:'Invalid credentials' });
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if(!ok) return res.status(401).json({ message:'Invalid credentials' });
+  const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '8h' });
+  res.json({ token });
+});
+
+module.exports = router;
+//
+
+//routes/jobs.js
+//js
+const express = require('express');
+const router = express.Router();
+const { Job } = require('../models');
+
+router.get('/', async (req,res)=>{
+  const jobs = await Job.findAll();
+  res.json(jobs);
+});
+
+router.post('/', async (req,res)=>{
+  const job = await Job.create(req.body);
+  res.status(201).json(job);
+});
+
+router.put('/:id', async (req,res)=>{
+  const job = await Job.findByPk(req.params.id);
+  if(!job) return res.status(404).send();
+  await job.update(req.body);
+  res.json(job);
+});
+
+router.delete('/:id', async (req,res)=>{
+  const job = await Job.findByPk(req.params.id);
+  if(!job) return res.status(404).send();
+  await job.destroy();
+  res.status(204).send();
+});
+
+module.exports = router;
+//
+
+//routes/applications.js
+//js
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' });
+const { Application } = require('../models');
+
+router.post('/', upload.single('resume'), async (req,res)=>{
+  const { userId, jobId } = req.body;
+  const resumeUrl = req.file ? `/uploads/${req.file.filename}` : null;
+  const app = await Application.create({ userId, jobId, resumeUrl });
+  res.status(201).json(app);
+});
+
+router.get('/user/:userId', async (req,res)=>{
+  const apps = await Application.findAll({ where: { userId: req.params.userId }, include: ['Job'] });
+  res.json(apps);
+});
+
+router.put('/:id/status', async (req,res)=>{
+  const app = await Application.findByPk(req.params.id);
+  app.status = req.body.status;
+  await app.save();
+  res.json(app);
+});
+
+module.exports = router;
+//
+
+---
